@@ -24,15 +24,12 @@ Once the output is generated, the webpage will display a form with all parsed ou
 It is know that not every MQF has the same formatting between various MDS. Currently, the parser looks to use the format used by the C-17 community in the following manner:
 
 - Questions begin with a number followed by a period and a space '. '
-- Each option begins on a new line starting with a letter followed by a period and a space '. '
-- The correct answer begins on a new line starting with the phrase "Answer"
-- The reference to applicable T.O./AFI/AFMAN, etc. begins on a new line starting with the phrase "Reference"
-
-**NOTE** Due to the PDF translation to text, there are some errors that occur that may input erroneous spaces, as such, the code does not look for the full phrase "Reference"
+- Each option begins on a new line starting with a letter followed by a period and a space '. ' and ensures that the first 4 characters are not "T.O."
+- The correct answer begins on a new line starting with the phrase "Answer:"
+- The reference to applicable T.O./AFI/AFMAN, etc. begins on a new line starting with the phrase "Reference:"
 
 ## Features to come
-[ ] Addition / subtraction of options and questions
-[ ] Turning the output into a form that will then be sent via POST to generate a downloadable JSON file
+- Addition / subtraction of options and questions
 
 ## Installation
 - Download the files into your project

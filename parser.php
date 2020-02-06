@@ -39,12 +39,12 @@
 		
 		if($filetype != "pdf") {
 			header("Location: /parser?e=incorrectExtension");
-			closeLogs();
+			exit();
 		}
 		
 		if($type != "application/pdf") {
 			header("Location: /parser?e=incorrectFileType");
-			closeLogs();
+			exit();
 		}
 
 		// Parser
@@ -71,7 +71,7 @@
 			$answer = "";
 			$reference = "";
 			
-			$questionArray = array();
+			$questionArray = array();			
 			$optionArray = array();
 			
 			foreach($textArray as $line) {
@@ -100,12 +100,11 @@
 					}
 				}
 				
-				
 				// Start looking for options
 				// We look for a pattern of "a.", "b.", "c." etc...
 				// Could look into using regex for this 
-				$first2 = substr($line, 0, 2);
-				if(strpos($first2, ".") == 1) {
+				$first2 = substr($line, 0, 2);				
+				if(strpos($first2, ".") == 1 && substr($line, 0, 4) != "T.O.") {
 					if(!is_numeric(substr($line, 0, 1))) {
 						fwrite($logFile, "-----Option-----".$crlf);
 						fwrite($logFile, $line.$crlf);
@@ -125,19 +124,36 @@
 				
 				// Next up could be an option
 				if($isOption) {
-					$tempArray = array(substr($line,0,1), trim(substr($line, 3)));
-					array_push($optionArray, $tempArray);
+					array_push($optionArray, trim(substr($line, 3)));
 					$isOption = false;
 				}
 				
-				// Start looking for the answer
-				if(substr($line, 0, 6) == "Answer") {
-					fwrite($logFile, "-----Answer-----".$crlf);
-					fwrite($logFile, $line.$crlf);
-					$isQuestion = false;
-					$isOption = false;
-					$isAnswer = true;
-					$isReference = false;
+				// Start looking for the answer and reference
+				// First look for a colon
+				$colon = substr($line, 0, 11);
+				if($colon !== false) {
+					// Remove any erroneous spaces
+					$colon = str_replace(" ", "", $colon);
+					
+					// Look to see if the subject is an answer
+					if(substr($colon, 0, 6) == "Answer") {
+						fwrite($logFile, "-----Answer-----".$crlf);
+						fwrite($logFile, $line.$crlf);
+						$isQuestion = false;
+						$isOption = false;
+						$isAnswer = true;
+						$isReference = false;
+					}
+					
+					// Look to see if the subject is a reference
+					if(substr($colon, 0, 9) == "Reference") {
+						fwrite($logFile, "-----Reference-----".$crlf);
+						fwrite($logFile, $line.$crlf.$crlf);
+						$isQuestion = false;
+						$isOption = false;
+						$isAnswer = false;
+						$isReference = true;
+					}
 				}
 				
 				// Looking at the answer
@@ -146,28 +162,23 @@
 					$isAnswer = false;
 				}
 				
-				// Start looking for the reference
-				if(substr($line, 0, 5) == "Refer") {
-					fwrite($logFile, "-----Reference-----".$crlf);
-					fwrite($logFile, $line.$crlf.$crlf);
-					$isQuestion = false;
-					$isOption = false;
-					$isAnswer = false;
-					$isReference = true;
-				}
-				
 				// Looking at the reference
 				if($isReference) {
 					$reference = substr($line, 11);
 					$reference = trim($reference);
 					
-					$questionSpace = strpos($question, " ");
-					$question = substr($question, $questionSpace);
-					
 					$question = trim($question);
 					$answer = trim($answer);
+					
+					// Change the answer from a letter to a number where
+					// a = 0, b = 1, c = 2, d = 3, etc...
+					$answer = ord(strtolower($answer)) - 97;
+					
 					$reference = trim($reference);
-					$fullQuestion = array("Number"=>$number, "Question"=>$question, "Options"=>$optionArray, "Answer"=>$answer, "Reference"=>$reference);
+					
+					$fullQuestion = array("number"=>$number, "question"=>$question, "type"=>"multiple_choice", "correct_response"=>$answer, "ref"=>$reference, "responses"=>$optionArray);
+					
+					//$fullQuestion = json_encode($fullQuestion);
 					
 					array_push($questionArray, $fullQuestion);
 					
@@ -186,8 +197,12 @@
 				}
 			}
 			
-			$json = json_encode($questionArray);
-			fwrite($jsonFile, $json);
+			$testArray = array("description"=>"", "name"=>substr($name,0,-4), "version"=>1,"questions"=>$questionArray);
+			
+			$jsonTest = json_encode($testArray);
+			
+			
+			fwrite($jsonFile, $jsonTest);
 		} catch(Exception $e) {
 			if($e->getMessage() == "Missing catalog.") {
 				echo "There was an error parsing your MQF, this is caused by printing a Word Doc to PDF. Instead, use the Save As function to save as a PDF and retry. If you still continue to receive this error, please send us an email with the PDF and error details.";
@@ -201,6 +216,8 @@
 		fclose($logFile);
 		fclose($jsonFile);
 		fclose($lineFile);
+	} else {
+		$finished = false;
 	}
 ?>
 <!DOCTYPE html>
@@ -262,52 +279,91 @@
 		<noscript><?php require("../req/structure/js-alert.php"); ?></noscript>
 		
 		<div id="body-container" class="container">
-			<?php 
-				if($finished) { 
-					$testFile = file_get_contents($jsonLog);
-					
-					$decoded = json_decode($testFile, true);
-					
-					foreach($decoded as $q) {
-			?>
-			<h3><?php echo $q["Number"]; ?></h3>
-			<div class="input-group">
-				<label for="num-<?php echo $q["Number"]; ?>-question">Question</label>
-				<input type="text" class="form-control d-block" id="num-<?php echo $q["Number"]; ?>-question" name="num-<?php echo $q["Number"]; ?>-question" value="<?php echo $q["Question"]; ?>">
-			</div>
-			<?php foreach($q["Options"] as $option) {
-				
-			?>
-			<div class="input-group">
-				<label for="num-<?php echo $q["Number"]; ?>-<?php echo $option[0]; ?>"><?php echo $option[0]; ?></label>
-				<input type="text" class="form-control" id="num-<?php echo $q["Number"]; ?>-<?php echo $option[0]; ?>" name="num-<?php echo $q["Number"]; ?>-<?php echo $option[0];?>" value="<?php echo $option[1]; ?>">
-			</div>
-			<?php
-			}
-			?>
-			<div class="input-group">
-				<label for="num-<?php echo $q["Number"]; ?>-answer">Answer</label>
-				<input type="text" class="form-control" id="num-<?php echo $q["Number"]; ?>-answer" name="num-<?php echo $q["Number"]; ?>-answer" value="<?php echo $q["Answer"]; ?>">
-			</div>
-			<div class="input-group">
-				<label for="num-<?php echo $q["Number"]; ?>-reference">Reference</label>
-				<input type="text" class="form-control" id="num-<?php echo $q["Number"]; ?>-reference" name="num-<?php echo $q["Number"]; ?>-reference" value="<?php echo $q["Reference"]; ?>">
-			</div>
-			<?php
-					}		
-				} else { 
-			?>
-			
 			<div class="card my-5">
 				<div class="card-body">
-					<form id="mqf-upload-form" method="POST" enctype="multipart/form-data">
-						<div class="custom-file">
-							<input type="file" class="custom-file-input" id="file" name="file" accept=".pdf">
-							<label id="file-label" class="custom-file-label" for="file">Choose File</label>
-						</div>
-						<button type="submit" class="btn btn-block btn-primary mt-2">Upload File</button>
-					</form>
-					
+					<?php 
+						if($finished) { 
+							$testFile = file_get_contents($jsonLog);						
+							$decoded = json_decode($testFile, true);
+					?>
+						<form method="POST" enctype="multipart/form-data" action="parse-edited">
+							<div class="form-group">
+								<div class="input-group mb-3">
+									<div class="input-group-prepend">
+										<span class="input-group-text">Name</span>
+									</div>
+									<input type="text" class="form-control" id="test-name" name="test-name" value="<?php echo $decoded["name"]; ?>">
+								</div>
+							</div>
+							<div class="form-group">
+								<div class="input-group mb-3">
+									<div class="input-group-prepend">
+										<span class="input-group-text">Description</span>
+									</div>
+									<input type="text" class="form-control" id="test-description" name="test-description" placeholder="Add a description">
+								</div>
+							</div>
+							<div class="form-group">
+								<div class="input-group mb-3">
+									<div class="input-group-prepend">
+										<span class="input-group-text">Version</span>
+									</div>
+									<input type="text" class="form-control" id="test-version" name="test-version" value="<?php echo $decoded["version"]; ?>">
+								</div>
+							</div>
+							<?php foreach($decoded["questions"] as $q) { ?>
+								<h4><?php echo $q["number"]; ?></h4>
+								<div class="form-group">
+									<div class="input-group mb-3">
+										<div class="input-group-prepend">
+											<span class="input-group-text">Question</span>
+										</div>
+										<input type="text" class="form-control" id="<?php echo "num-".$q["number"]."-question"; ?>" name="<?php echo "num-".$q["number"]."-question"; ?>" value="<?php echo $q["question"]; ?>">
+									</div>
+								</div>
+								<?php foreach($q["responses"] as $key => $value) { ?>
+									<div class="form-group">
+										<div class="input-group mb-3">
+											<div class="input-group-prepend">
+												<span class="input-group-text">
+													<?php 
+														$key = strtoupper(chr($key+97));
+														echo $key; 
+													?>
+												</span>
+											</div>
+											<input type="text" class="form-control" id="<?php echo "num-".$q["number"]."-$key"; ?>" name="<?php echo "num-".$q["number"]."-$key"; ?>" value="<?php echo $value; ?>">
+										</div>
+									</div>
+								<?php } ?>
+								<div class="form-group">
+									<div class="input-group mb-3">
+										<div class="input-group-prepend">
+											<span class="input-group-text">Answer</span>
+										</div>
+										<input type="text" class="form-control" id="num-<?php echo $q["number"]; ?>-answer" name="num-<?php echo $q["number"]; ?>-answer" value="<?php echo strtoupper(chr($q["correct_response"]+97)); ?>">
+									</div>
+								</div>
+								<div class="form-group">
+									<div class="input-group mb-3">
+										<div class="input-group-prepend">
+											<span class="input-group-text">Reference</span>
+										</div>
+										<input type="text" class="form-control" id="num-<?php echo $q["number"]; ?>-reference" name="num-<?php echo $q["number"]; ?>-reference" value="<?php echo $q["ref"]; ?>">
+									</div>
+								</div>
+							<?php } ?>
+							<button type="submit" class="btn btn-block btn-success">Save changes</button>
+						</form>
+					<?php } else { ?>
+						<form id="mqf-upload-form" method="POST" enctype="multipart/form-data">
+							<div class="custom-file">
+								<input type="file" class="custom-file-input" id="file" name="file" accept=".pdf">
+								<label id="file-label" class="custom-file-label" for="file">Choose File</label>
+							</div>
+							<button type="submit" class="btn btn-block btn-primary mt-2">Upload File</button>
+						</form>
+					<?php } ?>
 				</div>
 				<div class="card-footer d-none">
 					<div class="progress">
@@ -316,8 +372,9 @@
 					<div id="result"></div>
 				</div>
 			</div>
-			
-			<?php } ?>
 		</div>
     </body>
 </html>
+
+
+
